@@ -60,6 +60,10 @@ MIDDLEWARE = [
 CORS_ALLOWED_ORIGINS = [
     "https://financial-api-wdns.onrender.com",  
 ]
+CORS_ALLOW_CREDENTIALS = True
+
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+SECURE_SSL_REDIRECT = True
 
 REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
