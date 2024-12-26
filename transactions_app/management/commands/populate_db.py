@@ -42,33 +42,37 @@ class Command(BaseCommand):
             self.stderr.write(f"Error inserting devices: {e}")
 
         # Populate the Transactions table
-        try:
-            for _, row in df.iterrows():
-                Transactions.objects.create(
+        for _, row in df.iterrows():
+            try:
+                Transactions.objects.update_or_create(
                     TransactionID=row["TransactionID"],
-                    AccountID_id=row["AccountID"],
-                    MerchantID_id=row["MerchantID"],
-                    DeviceID_id=row["DeviceID"],
-                    TransactionAmount=row["TransactionAmount"],
-                    TransactionDate=make_aware(
-                        datetime.strptime(row["TransactionDate"], "%Y-%m-%d %H:%M:%S")
-                    ),
-                    TransactionType=row["TransactionType"],
-                    TransactionDuration=row["TransactionDuration"],
-                    LoginAttempts=row["LoginAttempts"],
-                    Channel=row["Channel"],
-                    Location=row["Location"],
-                    IPAddress=row["IPAddress"],
-                    CustomerAge=row["CustomerAge"],
-                    CustomerOccupation=row["CustomerOccupation"],
-                    AccountBalance=row["AccountBalance"],
-                    PreviousTransactionDate=make_aware(
-                        datetime.strptime(
-                            row["PreviousTransactionDate"], "%Y-%m-%d %H:%M:%S"
-                        )
-                    ),
+                    defaults={
+                        "AccountID_id": row["AccountID"],
+                        "MerchantID_id": row["MerchantID"],
+                        "DeviceID_id": row["DeviceID"],
+                        "TransactionAmount": row["TransactionAmount"],
+                        "TransactionDate": make_aware(
+                            datetime.strptime(
+                                row["TransactionDate"], "%Y-%m-%d %H:%M:%S"
+                            )
+                        ),
+                        "TransactionType": row["TransactionType"],
+                        "TransactionDuration": row["TransactionDuration"],
+                        "LoginAttempts": row["LoginAttempts"],
+                        "Channel": row["Channel"],
+                        "Location": row["Location"],
+                        "IPAddress": row["IPAddress"],
+                        "CustomerAge": row["CustomerAge"],
+                        "CustomerOccupation": row["CustomerOccupation"],
+                        "AccountBalance": row["AccountBalance"],
+                        "PreviousTransactionDate": make_aware(
+                            datetime.strptime(
+                                row["PreviousTransactionDate"], "%Y-%m-%d %H:%M:%S"
+                            )
+                        ),
+                    },
                 )
-        except Exception as e:
-            self.stderr.write(f"Error inserting transactions: {e}")
-
-        self.stdout.write("Database populated successfully.")
+            except Exception as e:
+                self.stderr.write(
+                    f"Error inserting transaction {row['TransactionID']}: {e}"
+                )
