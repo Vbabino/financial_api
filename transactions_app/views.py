@@ -1,27 +1,41 @@
 # import datetime
 from datetime import datetime, timedelta
-from .forms import TransactionsForm
-from rest_framework.generics import ListAPIView  # type: ignore
-from rest_framework.views import APIView  # type: ignore
-from rest_framework.reverse import reverse  # type: ignore
+from rest_framework.generics import ListAPIView
+from rest_framework.views import APIView
+from rest_framework.reverse import reverse
 import statistics as st
-from django.shortcuts import render, HttpResponse  # type: ignore
-from rest_framework.decorators import api_view  # type: ignore
-from rest_framework.response import Response  # type: ignore
-from .models import Transactions  # type: ignore
-from .serializer import TransactionsSerializer  # type: ignore
-from drf_yasg.utils import swagger_auto_schema  # type: ignore
-from drf_yasg import openapi  # type: ignore
-from django.db.models import Sum, Count  # type: ignore
-from django.db import models  # type: ignore
-from django.contrib import messages
+from django.shortcuts import render, HttpResponse
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from .models import Transactions
+from .serializer import TransactionsSerializer
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
+from django.db.models import Sum, Count
+from django.db import models
 
 
 # Create your views here.
 
 
-# Retrieves all transactions for a specific account, ordered by date.
 class TransactionsByAccount(ListAPIView):
+    """
+    Endpoint to retrieve a paginated list of transactions for a specific account, ordered by date.
+
+    This view handles GET requests to fetch transactions associated with a given account ID.
+    The transactions are ordered by their transaction date.
+
+    Attributes:
+        serializer_class (TransactionsSerializer): The serializer class used for serializing the transactions data.
+
+    Methods:
+        get(request, *args, **kwargs):
+            Handles GET requests to retrieve the list of transactions for the specified account.
+
+        get_queryset():
+            Retrieves the queryset of transactions filtered by the provided account ID and ordered by transaction date.
+    """
+
     serializer_class = TransactionsSerializer
 
     @swagger_auto_schema(
@@ -42,8 +56,10 @@ class TransactionsByAccount(ListAPIView):
 
     def get_queryset(self):
         account_id = self.kwargs["account_id"]
-        return Transactions.objects.filter(AccountID=account_id).order_by(
-            "TransactionDate"
+        return (
+            Transactions.objects.filter(AccountID=account_id)
+            .select_related("AccountID", "MerchantID", "DeviceID")
+            .order_by("TransactionDate")
         )
 
 
@@ -51,9 +67,11 @@ class SuspiciousTransactions(ListAPIView):
     serializer_class = TransactionsSerializer
 
     """
+    Endpoint to identify suspicious transactions based on high deviations from average spending, unusual locations, and excessive login attempts. 
+    
     Fraud Detection Rules:
 
-    1. High Deviation from Average Spending: Flag a transaction as fraud if the amount exceeds 2 standard deviations from the accounts's average spending.
+    1. High Deviation from Average Spending: Flag a transaction as fraud if the amount exceeds 2 standard deviations from the account's average spending.
 
     2. Unusual locations: Flag a transaction as suspicious if it occurs in a Location that is not among the top 3 most frequent locations for the account
 
@@ -81,7 +99,9 @@ class SuspiciousTransactions(ListAPIView):
         account_id = self.kwargs["account_id"]
 
         # Get all transactions for the account
-        transactions = Transactions.objects.filter(AccountID=account_id)
+        transactions = Transactions.objects.filter(AccountID=account_id).select_related(
+            "AccountID", "MerchantID", "DeviceID"
+        )
 
         # Initialize empty querysets for suspicious transactions
         high_deviation = Transactions.objects.none()
@@ -96,7 +116,7 @@ class SuspiciousTransactions(ListAPIView):
             high_deviation = transactions.filter(TransactionAmount__gt=threshold)
 
         # Unusual Locations
-        location_counts = (
+        location_counts = list(
             transactions.values("Location")
             .annotate(count=models.Count("Location"))
             .order_by("-count")
@@ -128,8 +148,26 @@ class SuspiciousTransactions(ListAPIView):
         return high_deviation | unusual_locations | excessive_login_attempts
 
 
-# Provides a summary of total transactions, total amounts, and counts for a specific merchant
 class TransactionsSummaryByMerchant(ListAPIView):
+    """
+    Provides a summary of total transactions, total amounts, and counts for a specific merchant.
+
+    This endpoint filters transactions for a given merchant and performs aggregation to return a summary
+    including the total amount of transactions and the total number of transactions for that merchant.
+
+    Attributes:
+        serializer_class (TransactionsSerializer): The serializer class used for the transactions.
+
+    Methods:
+        get(request, merchant_id, *args, **kwargs):
+            Handles GET requests to provide the summary of transactions for the specified merchant.
+            Parameters:
+                request (Request): The HTTP request object.
+                merchant_id (str): The ID of the merchant for which the summary is to be provided.
+            Returns:
+                Response: A response object containing the summary of transactions.
+    """
+
     serializer_class = TransactionsSerializer
 
     @swagger_auto_schema(
@@ -161,8 +199,33 @@ class TransactionsSummaryByMerchant(ListAPIView):
         return Response(summary)
 
 
-# Add a new transaction
 class AddTransaction(APIView):
+    """
+    Endpoint to create a new transaction with validations.
+
+    This endpoint allows the creation of a new transaction by accepting various transaction-related
+    details in the request body. The request body must include the following fields:
+
+    - AccountID (str): The ID of the account.
+    - TransactionDate (str): The date of the transaction.
+    - TransactionAmount (float): The amount of the transaction.
+    - TransactionType (str): The type of the transaction.
+    - TransactionDuration (int): The duration of the transaction.
+    - CustomerAge (int): The age of the customer.
+    - CustomerOccupation (str): The occupation of the customer.
+    - AccountBalance (float): The balance of the account.
+    - MerchantID (str): The ID of the merchant.
+    - Channel (str): The channel through which the transaction was made.
+    - DeviceID (str): The ID of the device used for the transaction.
+    - Location (str): The location of the transaction.
+    - LoginAttempts (int): The number of login attempts.
+    - IPAddress (str): The IP address from which the transaction was made.
+    - PreviousTransactionDate (str): The date of the previous transaction.
+
+    Responses:
+        200: Transaction added successfully.
+        400: Bad request with validation errors.
+    """
 
     @swagger_auto_schema(
         operation_description="Creates a new transaction with validations.",
@@ -196,8 +259,25 @@ class AddTransaction(APIView):
         return Response(serializer.errors, status=400)
 
 
-# Provides spending insights for a specific account, including totals by transaction type, most-used merchant, location, and channel
 class SpendingInsightsView(ListAPIView):
+    """
+    Provides spending insights for a specific account, including totals by transaction type, most-used merchant, location, and channel.
+
+    Attributes:
+        serializer_class (class): The serializer class used for transactions.
+
+    Methods:
+        get(request, account_id, *args, **kwargs):
+            Retrieves spending insights for the specified account.
+
+            Parameters:
+                request (HttpRequest): The request object.
+                account_id (str): The account ID for which to retrieve spending insights.
+
+            Returns:
+                Response: A response object containing spending insights or an error message.
+    """
+
     serializer_class = TransactionsSerializer
 
     @swagger_auto_schema(
@@ -226,22 +306,36 @@ class SpendingInsightsView(ListAPIView):
             )
 
             # Most used merchant
-            merchant_counts = transactions.values("MerchantID").annotate(
-                count=Count("TransactionID")
-            )
-            most_used_merchant = merchant_counts.order_by("-count").first()
+            # merchant_counts = transactions.values("MerchantID").annotate(
+            #     count=Count("TransactionID")
+            # )
+            # most_used_merchant = merchant_counts.order_by("-count").first()
 
-            # Check if all merchants are used once
-            if most_used_merchant and all(
-                merchant["count"] == 1 for merchant in merchant_counts
-            ):
+            # # Check if all merchants are used once
+            # if most_used_merchant and all(
+            #     merchant["count"] == 1 for merchant in merchant_counts
+            # ):
+            #     most_used_merchant = {"message": "All merchants are used once"}
+
+            merchant_counts = list(
+                transactions.values("MerchantID")
+                .annotate(count=Count("TransactionID"))
+                .order_by("-count")
+            )
+
+            most_used_merchant = merchant_counts[0] if merchant_counts else None
+
+            if most_used_merchant and all(m["count"] == 1 for m in merchant_counts):
                 most_used_merchant = {"message": "All merchants are used once"}
 
             # Most used channel
-            channel_counts = transactions.values("Channel").annotate(
-                count=Count("TransactionID")
+            channel_counts = list(
+                transactions.values("Channel")
+                .annotate(count=Count("TransactionID"))
+                .order_by("-count")
             )
-            most_used_channel = channel_counts.order_by("-count").first()
+
+            most_used_channel = channel_counts[0] if channel_counts else None
 
             # check if all channels are used once
             if most_used_channel and all(
@@ -250,10 +344,12 @@ class SpendingInsightsView(ListAPIView):
                 most_used_channel = {"message": "All channels are used once"}
 
             # Most used location
-            location_counts = transactions.values("Location").annotate(
-                count=Count("TransactionID")
+            location_counts = list(
+                transactions.values("Location")
+                .annotate(count=Count("TransactionID"))
+                .order_by("-count")
             )
-            most_used_location = location_counts.order_by("-count").first()
+            most_used_location = location_counts[0] if location_counts else None
 
             # check if all locations are used once
             if most_used_location and all(
@@ -279,6 +375,26 @@ class SpendingInsightsView(ListAPIView):
 
 
 class HighFrequencyAccountsView(APIView):
+    """
+    Identifies accounts with unusually high transaction frequency within a defined period.
+
+    This endpoint allows users to identify accounts that have a high number of transactions
+    within a specified number of days. By default, it analyzes the last 1000 days of transactions.
+
+    Query Parameters:
+    - days (int, optional): Number of days to analyze transaction frequency. Default is 1000.
+
+    Responses:
+    - 200 OK: A JSON object containing:
+        - period_days (int): The number o days analyzed.
+        - high_frequency_accounts (list): A list of accounts with high transaction frequency,
+          each containing:
+            - AccountID (str): The ID of the account.
+            - transaction_count (int): The number of transactions for the account within the period.
+
+    Example:
+    GET /api/high-frequency-accounts?days=30
+    """
 
     @swagger_auto_schema(
         operation_description="Identifies accounts with unusually high transaction frequency within a defined period.",
@@ -313,7 +429,7 @@ class HighFrequencyAccountsView(APIView):
         },
     )
     def get(self, request, *args, **kwargs):
-        # Get the period from query parameters (default: last 7 days)
+        # Get the period from query parameters (default: last 1000 days)
         period = int(request.query_params.get("days", 1000))
 
         # Calculate the start date for filtering
