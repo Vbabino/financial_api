@@ -15,6 +15,10 @@ The API includes the following main endpoints:
 
 The project serves as a comprehensive financial transaction analysis system, offering both monitoring and analytical capabilities through its RESTful API interface, built with Django REST Framework and fully documented using Swagger.
 
+## Architecture
+
+![Architecture](./architecture.png)
+
 ## Project Structure
 ```
 Mid-term-project/
